@@ -17,7 +17,7 @@ def converter_para_cog(
     caminho_entrada: str,
     caminho_saida: str,
     compressao: str = "deflate",
-    resampling_overview: str = "average",
+    resampling_overview: str = "nearest",
     remover_temp: bool = True,
 ) -> None:
     """
