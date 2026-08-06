@@ -26,11 +26,11 @@ from raspy import ingest, clip, transform, cog, metadata
 # ---------------------------------------------------------------------------
 
 
-ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec.tif"
+ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_AA100m.tif"
 MASCARA_GPKG = r"input/xingu_river/xingu_river_study_area_bounding_box.gpkg"
-SAIDA_CLIP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_clip.tif"
-SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_temp.tif"
-SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog.tif"
+SAIDA_CLIP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map_reclassified\xingu_river_wetland_dual-season_veg_flood_AA100m_reclassified_cog\xingu_river_wetland_dual-season_veg_flood_AA100m_clip.tif"
+SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map_reclassified\xingu_river_wetland_dual-season_veg_flood_AA100m_reclassified_cog\xingu_river_wetland_dual-season_veg_flood_AA100m_reclassified_temp.tif"
+SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map_reclassified\xingu_river_wetland_dual-season_veg_flood_AA100m_reclassified_cog\xingu_river_wetland_dual-season_veg_flood_AA100m_reclassified_cog.tif"
 
 RECLASSIFICACAO = {
     0: 0,
@@ -56,6 +56,12 @@ RECLASSIFICACAO = {
 }
 
 # ---------------------------------------------------------------------------
+# Garantir que os diretórios de saída existam
+# ---------------------------------------------------------------------------
+for caminho in [SAIDA_CLIP, SAIDA_TEMP, SAIDA_FINAL]:
+    Path(caminho).parent.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
@@ -70,7 +76,6 @@ print(f"  Resolução: {info['resolucao']}")
 print(f"  Bandas: {info['bandas']}")
 print(f"  Nodata original: {info['nodata']}")
 
-'''
 # Passo 2: Recorte — limita o raster à geometria do GeoPackage
 print("\n→ Passo 2: Recorte territorial")
 clip.recortar_por_gpkg(
@@ -82,19 +87,22 @@ clip.recortar_por_gpkg(
     all_touched=False,         # só pixels com centro dentro da geometria
 )
 
-# Passo 3: Transformação — converte cm → m em blocos (opera sobre o recorte)
-print("\n→ Passo 3: Transformação (÷ 100)")
-transform.aplicar_fator_escala(
+# ---------------------------------------------------------------------------
+# Passo 3: Reclassificação
+# ---------------------------------------------------------------------------
+print("\n→ Passo 3: Reclassificação")
+transform.reclassificar(
     caminho_entrada=SAIDA_CLIP,
     caminho_saida=SAIDA_TEMP,
-    fator=100.0,
-    nodata_saida=-9999.0,
+    mapeamento=RECLASSIFICACAO,
+    nodata_saida=0,
+    dtype="uint8",
 )
-'''
+
 # Passo 3: Conversão para COG
 print("\n→ Passo 4: Conversão para COG")
 cog.converter_para_cog(
-    caminho_entrada=ENTRADA, #mudar quando for rodar transformação
+    caminho_entrada=SAIDA_TEMP, #mudar quando for rodar transformação
     caminho_saida=SAIDA_FINAL,
     compressao="deflate",
     resampling_overview="nearest",
@@ -108,7 +116,7 @@ valido = cog.validar_cog(SAIDA_FINAL)
 # Passo 5: Geração de metadados YAML
 print("\n→ Passo 6: Metadados")
 metadata.gerar_metadados(
-    caminho_entrada=ENTRADA,
+    caminho_entrada=SAIDA_TEMP,
     caminho_saida=SAIDA_FINAL,
     info_raster=info,
     fator_escala=1.0,

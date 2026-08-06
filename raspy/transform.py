@@ -73,3 +73,92 @@ def aplicar_fator_escala(
                 print(f"  Bloco {i}/{total_blocos}", end="\r")
 
     print(f"\n  Transformação concluída → {caminho_saida}")
+
+def reclassificar(
+    caminho_entrada: str,
+    caminho_saida: str,
+    mapeamento: dict,
+    nodata_saida: int = 0,
+    dtype: str = "uint8",
+) -> None:
+    """
+    Reclassifica os valores de um raster usando um dicionário de mapeamento.
+
+    Cada valor encontrado no raster é substituído pelo valor correspondente
+    no dicionário.
+
+    Exemplo
+    -------
+    mapeamento = {
+        1: 0,
+        2: 1,
+        3: 1,
+        4: 0,
+    }
+
+    Parâmetros
+    ----------
+    caminho_entrada : str
+        Raster de entrada.
+
+    caminho_saida : str
+        Raster GeoTIFF intermediário de saída.
+
+    mapeamento : dict
+        Dicionário {valor_original: novo_valor}.
+
+    nodata_saida : int
+        Valor usado para pixels que não possuem uma regra no mapeamento.
+
+    dtype : str
+        Tipo numérico do raster de saída.
+        Para reclassificação binária, uint8 é recomendado.
+    """
+
+    with rasterio.open(caminho_entrada) as src:
+
+        nodata_original = src.nodata
+
+        perfil = src.profile.copy()
+        perfil.update(
+            driver="GTiff",
+            dtype=dtype,
+            compress="DEFLATE",
+            predictor=2,
+            blockxsize=1024,
+            blockysize=1024,
+            tiled=True,
+            BIGTIFF="YES",
+            nodata=nodata_saida,
+        )
+
+        total_blocos = sum(1 for _ in src.block_windows(1))
+
+        with rasterio.open(caminho_saida, "w", **perfil) as dst:
+
+            for i, (_, window) in enumerate(src.block_windows(1), 1):
+
+                bloco = src.read(1, window=window)
+
+                # Começa todos os pixels com o valor padrão.
+                resultado = np.full(
+                    bloco.shape,
+                    nodata_saida,
+                    dtype=dtype,
+                )
+
+                # Aplica cada regra de reclassificação.
+                for valor_original, novo_valor in mapeamento.items():
+                    mascara = bloco == valor_original
+                    resultado[mascara] = novo_valor
+
+                # Preserva explicitamente o nodata original.
+                if nodata_original is not None:
+                    mascara_nodata = bloco == nodata_original
+                    resultado[mascara_nodata] = nodata_saida
+
+                dst.write(resultado, 1, window=window)
+
+                print(f"  Bloco {i}/{total_blocos}", end="\r")
+
+    print(f"\n  Reclassificação concluída → {caminho_saida}")

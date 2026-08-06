@@ -26,34 +26,18 @@ from raspy import ingest, clip, transform, cog, metadata
 # ---------------------------------------------------------------------------
 
 
-ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec.tif"
+ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_AA100m.tif"
 MASCARA_GPKG = r"input/xingu_river/xingu_river_study_area_bounding_box.gpkg"
-SAIDA_CLIP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_clip.tif"
-SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_temp.tif"
-SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual_season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog.tif"
+SAIDA_CLIP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_cog\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_clip.tif"
+SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_cog\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_temp.tif"
+SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_cog\LBA_Amazon_wetland_dual-season_veg_flood_AA100m_cog.tif"
 
-RECLASSIFICACAO = {
-    0: 0,
-    1: 0,
-    11: 1,
-    13: 1,
-    21: 1,
-    23: 1,
-    33: 1,
-    41: 1,
-    44: 0,
-    45: 1,
-    51: 1,
-    55: 1,
-    66: 0,
-    67: 1,
-    77: 1,
-    88: 0,
-    89: 1,
-    99: 1,
-    200: 0,
-    255: 0,
-}
+
+# ---------------------------------------------------------------------------
+# Garantir que os diretórios de saída existam
+# ---------------------------------------------------------------------------
+for caminho in [SAIDA_CLIP, SAIDA_TEMP, SAIDA_FINAL]:
+    Path(caminho).parent.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Pipeline
