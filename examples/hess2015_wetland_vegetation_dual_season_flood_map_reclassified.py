@@ -16,6 +16,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+
 # Permite importar raspy mesmo sem instalar como pacote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
