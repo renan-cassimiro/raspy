@@ -62,6 +62,18 @@ def recortar_por_gpkg(
         # Extrai as geometrias como lista de dicionários (formato esperado pelo rasterio)
         geometrias = [geom.__geo_interface__ for geom in gdf.geometry]
 
+        # Se o raster de entrada não tem nodata definido, rasterio.mask.mask()
+        # preenche a área fora da geometria com 0 por padrão. Isso pode colidir
+        # com valores de dado válidos (ex.: uma classe 0 legítima). Avisamos
+        # explicitamente em vez de deixar esse comportamento implícito.
+        if src.nodata is None:
+            print(
+                "  AVISO: raster de entrada não possui nodata definido. "
+                "A área fora da geometria de recorte será preenchida com 0, "
+                "o que pode ser indistinguível de um valor de dado válido. "
+                "Considere definir um nodata explícito antes do recorte."
+            )
+
         # Aplica o recorte
         raster_recortado, transform_novo = mask(
             src,

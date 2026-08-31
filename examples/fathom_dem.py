@@ -98,7 +98,8 @@ cog.converter_para_cog(
     caminho_saida=SAIDA_FINAL,
     compressao="deflate",
     resampling_overview="nearest",
-    remover_temp=False,           # remove o arquivo temporário ao final
+    remover_temp=False,  # decisão deliberada: mantemos o intermediário para depuração
+                         # manual enquanto os exemplos não usam o pipeline builder
 )
 
 # Passo 4: Validação do COG gerado
@@ -113,11 +114,10 @@ metadata.gerar_metadados(
     info_raster=info,
     fator_escala=1.0,
     compressao="deflate",
-    resampling_overview="average",
+    resampling_overview="nearest",  # corrigido: deve refletir o valor usado em cog.converter_para_cog() acima
     origem="FathomDEM v1.0 — https://www.fathom.global",
     calcular_checksum=True,
 )
 
 fim = datetime.now()
 print(f"\n[{fim}] Concluído em {fim - inicio}")
-
