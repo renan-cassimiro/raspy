@@ -162,3 +162,115 @@ def reclassificar(
                 print(f"  Bloco {i}/{total_blocos}", end="\r")
 
     print(f"\n  Reclassificação concluída → {caminho_saida}")
+
+
+
+def calcular_declividade(
+    caminho_entrada: str,
+    caminho_saida: str,
+    unidade: str = "degrees",
+    nodata_saida: float = -9999.0,
+) -> None:
+    """
+    Calcula a declividade a partir de um Modelo Digital de Elevação.
+
+    Parâmetros
+    ----------
+    caminho_entrada : str
+        Caminho do raster de elevação (DEM).
+
+    caminho_saida : str
+        Caminho do raster temporário de saída.
+
+    unidade : str
+        Unidade da declividade:
+        - "degrees": graus
+        - "percent": porcentagem
+
+    nodata_saida : float
+        Valor de nodata do raster de saída.
+    """
+
+    with rasterio.open(caminho_entrada) as src:
+
+        if src.count != 1:
+            raise ValueError(
+                "O cálculo de declividade requer um raster de banda única."
+            )
+
+        # Resolução espacial
+        res_x, res_y = src.res
+
+        # Perfil de saída
+        perfil = src.profile.copy()
+        perfil.update(
+            driver="GTiff",
+            dtype="float32",
+            compress="DEFLATE",
+            predictor=3,
+            blockxsize=1024,
+            blockysize=1024,
+            tiled=True,
+            BIGTIFF="YES",
+            nodata=nodata_saida,
+        )
+
+        # Leitura do DEM
+        dem = src.read(1).astype("float32")
+
+        # Máscara nodata
+        if src.nodata is not None:
+            mascara_nodata = dem == src.nodata
+            dem[mascara_nodata] = np.nan
+        else:
+            mascara_nodata = np.zeros(dem.shape, dtype=bool)
+
+        # Gradientes horizontal e vertical
+        dz_dy, dz_dx = np.gradient(
+            dem,
+            res_y,
+            res_x
+        )
+
+        # Magnitude do gradiente
+        gradiente = np.sqrt(
+            dz_dx**2 +
+            dz_dy**2
+        )
+
+        # Declividade
+        if unidade == "degrees":
+
+            declividade = np.degrees(
+                np.arctan(gradiente)
+            )
+
+        elif unidade == "percent":
+
+            declividade = gradiente * 100
+
+        else:
+            raise ValueError(
+                "Unidade inválida. Use 'degrees' ou 'percent'."
+            )
+
+        # Define nodata
+        declividade[
+            np.isnan(declividade) | mascara_nodata
+        ] = nodata_saida
+
+        with rasterio.open(
+            caminho_saida,
+            "w",
+            **perfil
+        ) as dst:
+
+            dst.write(
+                declividade.astype("float32"),
+                1
+            )
+
+    print(
+        f"Declividade calculada ({unidade}) → "
+        f"{caminho_saida}"
+    )
