@@ -85,4 +85,5 @@ def validar_cog(caminho: str) -> bool:
         print(f"    AVISO: {aviso}")
 
     return is_valid
-    
+     
+ 

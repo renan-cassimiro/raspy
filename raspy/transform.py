@@ -161,4 +161,5 @@ def reclassificar(
 
                 print(f"  Bloco {i}/{total_blocos}", end="\r")
 
-    print(f"\n  Reclassificação concluída → {caminho_saida}")
+    print(f"\n  Reclassificação concluída → {caminho_saida}") 
+ 

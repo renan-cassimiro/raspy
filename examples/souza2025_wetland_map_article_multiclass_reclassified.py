@@ -1,109 +1,35 @@
-# examples/fathomdem.py
+# examples/souza2025_wetland_map_article_multiclass_reclassified.py
 #
-# Exemplo de uso do raspy para processar o FathomDEM da bacia amazônica.
+# Souza et al. 2025 — mapa multiclasse de áreas úmidas, reclassificado
+# em máscara binária (0 = classe 0 original, 1 = qualquer classe 1-10).
+# Sem recorte espacial (processado na extensão original do dado).
 #
-# O dado original está em centímetros (inteiro) e precisa ser:
-# 1. recortado para a área de interesse (GeoPackage)
-# 2. convertido para metros (float32, dividir por 100)
-# 3. exportado como COG válido com compressão DEFLATE
-# 4. documentado com metadados YAML
-#
-# Como rodar:
-#   conda activate raspy
-#   python examples/fathomdem.py
+# Como rodar (com o ambiente já configurado — ver README.md):
+#   conda activate raspy_env
+#   python examples/souza2025_wetland_map_article_multiclass_reclassified.py
 
-import sys
-from datetime import datetime
-from pathlib import Path
-
-# Permite importar raspy mesmo sem instalar como pacote
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from raspy import ingest, clip, transform, cog, metadata
+from raspy import RasterPipeline
 
 # ---------------------------------------------------------------------------
 # Caminhos — ajuste para o seu ambiente
 # ---------------------------------------------------------------------------
 
+ENTRADA = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\souza2025\raw\wetland_map_article_multiclass\wetland_map_article_multiclass.tif"
+SAIDA_FINAL = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\souza2025\processed\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog.tif"
 
-ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\souza2025\raw\wetland_map_article_multiclass\wetland_map_article_multiclass.tif"
-SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\souza2025\processed\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog_temp.tif"
-SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\souza2025\processed\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog\wetland_map_article_multiclass_reclassified_cog.tif"
-
-RECLASSIFICACAO = {
-    0: 0,
-    1: 1,
-    2: 1,
-    3: 1,
-    4: 1,
-    5: 1,
-    6: 1,
-    7: 1,
-    8: 1,
-    9: 1,
-    10: 1
-}
-
-# ---------------------------------------------------------------------------
-# Garantir que os diretórios de saída existam
-# ---------------------------------------------------------------------------
-for caminho in [SAIDA_TEMP, SAIDA_FINAL]:
-    Path(caminho).parent.mkdir(parents=True, exist_ok=True)
+RECLASSIFICACAO = {0: 0, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1}
 
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
-inicio = datetime.now()
-print(f"[{inicio}] Iniciando processamento\n")
+with RasterPipeline(
+    ENTRADA,
+    SAIDA_FINAL,
+    origem="Enhanced Amazon Wetland Map with Multi-Source Remote Sensing Data — https://www.mdpi.com/2072-4292/17/21/3644",
+    remover_temp=False,  # decisão deliberada (DEC-007): mantém intermediários para depuração manual
+) as p:
+    p.reclassify(mapeamento=RECLASSIFICACAO, nodata_saida=0, dtype="uint8")
 
-# Passo 1: Ingestão — valida e lê metadados do raster de entrada
-print("→ Passo 1: Ingestão")
-info = ingest.abrir_raster(ENTRADA)
-print(f"  CRS: {info['crs']}")
-print(f"  Resolução: {info['resolucao']}")
-print(f"  Bandas: {info['bandas']}")
-print(f"  Nodata original: {info['nodata']}")
-
-# ---------------------------------------------------------------------------
-# Passo 2: Reclassificação
-# ---------------------------------------------------------------------------
-print("\n→ Passo 2: Reclassificação")
-transform.reclassificar(
-    caminho_entrada=ENTRADA,
-    caminho_saida=SAIDA_TEMP,
-    mapeamento=RECLASSIFICACAO,
-    nodata_saida=0,
-    dtype="uint8",
-)
-
-# Passo 3: Conversão para COG
-print("\n→ Passo 3: Conversão para COG")
-cog.converter_para_cog(
-    caminho_entrada=SAIDA_TEMP, #mudar quando for rodar transformação
-    caminho_saida=SAIDA_FINAL,
-    compressao="deflate",
-    resampling_overview="nearest",
-    remover_temp=False,           # remove o arquivo temporário ao final
-)
-
-# Passo 5: Validação do COG gerado
-print("\n→ Passo 5: Validação COG")
-valido = cog.validar_cog(SAIDA_FINAL)
-
-# Passo 5: Geração de metadados YAML
-print("\n→ Passo 6: Metadados")
-metadata.gerar_metadados(
-    caminho_entrada=SAIDA_TEMP,
-    caminho_saida=SAIDA_FINAL,
-    info_raster=info,
-    fator_escala=1.0,
-    compressao="deflate",
-    resampling_overview="average",
-    origem="Enhanced Amazon Wetland Map with Multi-Source Remote Sensing Data  — https://www.mdpi.com/2072-4292/17/21/3644",
-    calcular_checksum=True,
-)
-
-fim = datetime.now()
-print(f"\n[{fim}] Concluído em {fim - inicio}")
-
+print(f"COG válido: {p.cog_valido}")
+print(f"Metadados: {p.metadata_path}")

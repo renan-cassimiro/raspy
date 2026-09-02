@@ -41,6 +41,7 @@ def gerar_metadados(
     caminho_saida: str,
     info_raster: dict,
     fator_escala: float = None,
+    nodata_saida: float = None,
     compressao: str = "deflate",
     resampling_overview: str = "average",
     origem: str = None,
@@ -62,6 +63,17 @@ def gerar_metadados(
         Dicionário retornado por ingest.abrir_raster().
     fator_escala : float, opcional
         Fator de escala aplicado (ex: 100.0 para cm→m).
+    nodata_saida : float, opcional
+        Valor de nodata realmente gravado no arquivo de saída (ex.:
+        obtido via `rasterio.open(caminho_saida).nodata`). Se informado,
+        é registrado exatamente como passado, e deve corresponder ao
+        nodata real do arquivo — esta função não valida essa
+        correspondência.
+        Se omitido, o valor é inferido a partir de `fator_escala`
+        (comportamento legado, mantido por compatibilidade com scripts
+        existentes; ver DIV-04 em `divergence-matrix.md` — essa
+        inferência pode não corresponder ao nodata real quando a
+        transformação aplicada foi reclassificação, não escala).
     compressao : str
         Compressão usada na conversão COG.
     resampling_overview : str
@@ -107,7 +119,11 @@ def gerar_metadados(
 
         "processamento": {
             "fator_escala": fator_escala,
-            "nodata_saida": -9999.0 if fator_escala else info_raster["nodata"],
+            "nodata_saida": (
+                nodata_saida
+                if nodata_saida is not None
+                else (-9999.0 if fator_escala else info_raster["nodata"])
+            ),
             "compressao": compressao,
             "resampling_overview": resampling_overview,
         },
@@ -123,4 +139,5 @@ def gerar_metadados(
         yaml.dump(metadados, f, allow_unicode=True, sort_keys=False)
 
     print(f"  Metadados salvos → {caminho_yaml}")
-    return caminho_yaml
+    return caminho_yaml 
+ 
