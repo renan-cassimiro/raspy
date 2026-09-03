@@ -107,3 +107,36 @@
 **Justificativa:** dados sintéticos pequenos e controlados permitem construir casos-limite que datasets reais não cobrem de forma confiável (ex.: classe 0 coincidindo com nodata, ausência de nodata, multibanda) — exatamente os cenários que a matriz de divergências identificou como mais perigosos.
 **Data:** 2026-08-30
 **Reversível:** sim.
+
+---
+
+## DEC-011
+**Decisão:** Implementar `RasterPipeline` (REQ-009) preenchendo os pontos que o requisito deixava `[EM ABERTO]` da seguinte forma:
+- `caminho_saida` é obrigatório já na construção do objeto (`RasterPipeline(entrada, saida, ...)`), não em um método separado, porque a etapa final sempre roda automaticamente e precisa saber onde gravar o COG desde o início.
+- `clip()`, `scale()` e `reclassify()` podem ser chamados em qualquer ordem, qualquer número de vezes (inclusive zero). Cada chamada grava um arquivo intermediário próprio (prefixo `.raspy_tmp_`) no mesmo diretório de `caminho_saida`.
+- `resampling_overview`, se não informado explicitamente, é inferido automaticamente a partir da última transformação numérica aplicada: `"average"` depois de `scale()`, `"nearest"` depois de `reclassify()`, e `"nearest"` se nenhuma transformação numérica ocorrer — refletindo a distinção contínuo/categórico já reconhecida em `SPEC/scientific.md`, item 8.4. Informar o parâmetro explicitamente sempre tem prioridade sobre essa inferência.
+- O raster de entrada original nunca é removido pelo pipeline, mesmo com `remover_temp=True` — apenas os arquivos intermediários criados pelo próprio pipeline entram na lista de limpeza. Isso evita que um pipeline sem nenhuma transformação (`with RasterPipeline(...) as p: pass`) apague o dado bruto do usuário.
+- Se uma exceção ocorrer dentro do bloco `with`, a etapa final não é executada, a exceção é sempre propagada (nunca silenciada), e os arquivos intermediários já gerados **permanecem em disco** (não são limpos mesmo com `remover_temp=True`), para permitir inspeção do que foi produzido até a falha.
+- `RasterPipeline` não registra a geometria de recorte nem a tabela de reclassificação completa nos metadados — isso continua sendo o escopo do REQ-008, ainda `[EM ABERTO]` e não decidido nesta rodada.
+**Contexto:** REQ-009 e DEC-001 aprovaram o desenho geral (objeto + context manager), mas deixaram explicitamente em aberto a assinatura exata da API, o tratamento de erros dentro do `with`, e o formato de saída.
+**Alternativas consideradas:**
+- Exigir que o usuário sempre informe `resampling_overview` explicitamente, sem inferência automática — descartada por reintroduzir o mesmo tipo de esquecimento manual que causou DIV-12.
+- Limpar os arquivos intermediários mesmo em caso de erro — descartada porque dificultaria depurar exatamente qual etapa falhou e com qual resultado intermediário.
+**Justificativa:** cada decisão acima foi escolhida por eliminar uma classe inteira de erro humano observada na matriz de divergências (DIV-04, DIV-05, DIV-12), sem exigir que o usuário lembre de fazer algo a mais manualmente — a única exceção é REQ-008, que foi deliberadamente deixado de fora por não ter escopo definido ainda.
+**Validação:** testado manualmente em 2026-08-31 com dados sintéticos (raster categórico 20×20 com classe `0` legítima + nodata, e um GeoPackage de recorte), cobrindo os 5 cenários descritos no `Status` de REQ-009. Todos os comportamentos acima foram confirmados na prática, não apenas no código.
+**Data:** 2026-08-31
+**Reversível:** parcialmente — a assinatura pública (`RasterPipeline(entrada, saida, ...)`, `.clip()`, `.scale()`, `.reclassify()`) tende a ser usada em novo código assim que existir; mudar depois exigiria depreciar, não apenas ajustar.
+
+---
+
+## DEC-012
+**Decisão:** Migrar os 5 scripts de `examples/` para `RasterPipeline`, e corrigir um bug real encontrado no processo: `RasterPipeline` não expunha `cog_valido` nem `metadata_path` publicamente (a validação e o caminho do YAML eram calculados em `_finalizar()` mas descartados, não guardados em `self`).
+**Contexto:** o usuário apontou que o empacotamento anterior entregou a `RasterPipeline` e a suíte de testes, mas deixou `examples/` como estava — cada script ainda chamando `ingest`/`clip`/`transform`/`cog`/`metadata` manualmente, exatamente a duplicação que DIV-06/07/08 descreviam. Isso não tinha sido pedido explicitamente na rodada anterior e foi deliberadamente adiado (ver `CHANGELOG.md`), mas ficou como pendência visível.
+**Como o bug foi encontrado:** ao escrever os exemplos migrados, cada um terminava com `print(p.cog_valido)` e `print(p.metadata_path)` — isso quebrou com `AttributeError` no primeiro teste manual com dado sintético, porque esses atributos nunca tinham sido testados isoladamente antes (a validação anterior, EXP-001, só checava o COG e o YAML diretamente no disco, nunca o retorno do objeto `RasterPipeline` em si).
+**Alternativas consideradas:**
+- Não expor esses atributos e fazer os exemplos lerem o YAML do disco para confirmar sucesso — descartada por reintroduzir acoplamento com o formato do YAML dentro dos exemplos, exatamente o tipo de duplicação que `RasterPipeline` deveria eliminar.
+**Justificativa:** um objeto que executa uma ação (validar um COG, gerar um arquivo de metadados) e descarta o resultado força quem usa a API a repetir o trabalho manualmente para saber se deu certo — o mesmo problema estrutural que motivou toda a `RasterPipeline` em primeiro lugar, só que um nível abaixo.
+**Efeito colateral registrado:** ao migrar, também corrigido um bug de copiar-e-colar não catalogado antes (cabeçalho/`origem` de todos os 5 exemplos citando "FathomDEM", quando nenhum dos datasets é FathomDEM) — ver `CHANGELOG.md` para o detalhe completo por arquivo. O dicionário `RECLASSIFICACAO`, presente mas nunca usado em um dos exemplos, foi mantido comentado (não ativado), porque ativá-lo mudaria o produto científico gerado — essa é uma decisão do dono do projeto, não uma correção de bug.
+**Validação:** suíte de testes completa (13 testes) re-executada após a correção, mais um teste de fumaça manual reproduzindo a estrutura exata dos exemplos migrados (clip + reclassify com dado sintético), mais um novo teste automatizado (`assert p.cog_valido is True` / `assert p.metadata_path == ...`) adicionado a `tests/pipeline/test_raster_pipeline.py` para travar essa regressão especificamente.
+**Data:** 2026-09-01
+**Reversível:** sim — adicionar atributos públicos não quebra nenhum uso existente de `RasterPipeline` (é estritamente aditivo).

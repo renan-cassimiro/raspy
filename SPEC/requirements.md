@@ -91,9 +91,10 @@
 - **cada um desses valores deve corresponder ao que foi de fato executado** — em particular, `resampling_overview` registrado deve ser idêntico ao usado em `cog.converter_para_cog()`, e `nodata_saida` registrado deve ser idêntico ao nodata real do arquivo de saída (verificável via `rasterio.open(saida).nodata`).
 **Teste relacionado:** TEST-007 (não implementado) — deve incluir verificação cruzada entre o YAML gerado e as propriedades reais do arquivo de saída, não apenas a presença dos campos.
 **Status:**
-- `resampling_overview` corrigido manualmente nos 5 exemplos existentes em 2026-08-30 (DEC-005, resolve DIV-12 nos exemplos atuais).
-- `nodata_saida` (DIV-04) e `caminho_entrada` (DIV-05) **ainda incorretos por design atual** — a correção estrutural foi adiada para a `RasterPipeline` (DEC-003), que passará a derivar esses valores automaticamente da execução real, em vez de exigir redigitação manual.
-*Evidência: `metadata.py::gerar_metadados()`. Grau de confiança: alto quanto ao problema; a solução definitiva depende de REQ-009.*
+- `resampling_overview` corrigido manualmente nos 5 exemplos existentes em 2026-08-30 (DEC-005, resolve DIV-12 nos exemplos atuais, ainda com duplicação manual).
+- `nodata_saida` (DIV-04), `caminho_entrada` (DIV-05) e `resampling_overview` (DIV-12) **resolvidos estruturalmente em 2026-08-31** para quem usa `RasterPipeline` (REQ-009): esses valores agora vêm de uma única fonte (o estado interno do pipeline e o arquivo de saída real), não são mais digitados duas vezes. `metadata.gerar_metadados()` em si não mudou de assinatura — o que mudou é que `pipeline.py` sempre a chama corretamente.
+- **Pendência remanescente:** os 5 scripts em `examples/` ainda chamam as funções manualmente (não foram migrados para `RasterPipeline` — DIV-06/07/08, DEC-004). Enquanto isso não acontecer, o risco de divergência manual continua existindo para quem usa os exemplos como referência, mesmo com o pipeline já disponível.
+*Evidência: `metadata.py::gerar_metadados()` (inalterado) + `pipeline.py::RasterPipeline._finalizar()`. Grau de confiança: alto — testado de ponta a ponta em 3 cenários (sem transformação, escala, clip+reclassificação).*
 
 ---
 
@@ -106,12 +107,20 @@
 
 ---
 
-## REQ-009 — candidato
+## REQ-009
 **Descrição:** Deve existir uma API de composição de pipeline (`RasterPipeline`) que permita ao usuário encadear livremente as transformações disponíveis (clip, escala, reclassificação) em qualquer ordem, e que execute automaticamente, ao final (via context manager), a conversão para COG, a validação e a geração de metadados — usando os mesmos parâmetros reais da execução, sem duplicação manual.
 **Tipo:** computacional
-**Critério de aceitação:** `[EM ABERTO]` — o desenho geral foi decidido (DEC-001: objeto + context manager), mas a assinatura exata da API, o tratamento de erros dentro do bloco `with`, e o formato de saída ainda não foram especificados.
-**Teste relacionado:** TEST-009 (a definir após implementação)
-**Status:** design aprovado (DEC-001); implementação pendente. É o requisito que, uma vez satisfeito, resolve estruturalmente REQ-007 (DIV-04, DIV-05, DIV-12) e elimina a necessidade dos scripts de exemplo duplicados (DIV-06, DIV-07, DIV-08).
+**Critério de aceitação:**
+- `clip()`, `scale()` e `reclassify()` podem ser chamados em qualquer ordem, qualquer quantidade de vezes (inclusive zero vezes);
+- ao sair do bloco `with` sem exceção, `cog.converter_para_cog()`, `cog.validar_cog()` e `metadata.gerar_metadados()` são chamados automaticamente, sem intervenção do usuário;
+- `resampling_overview` usado na conversão e o registrado nos metadados devem ser sempre idênticos (resolve DIV-12 estruturalmente, não apenas nos exemplos);
+- `nodata_saida` registrado nos metadados deve ser lido do arquivo de saída real, não inferido de `fator_escala` (resolve DIV-04 estruturalmente);
+- `caminho_entrada` registrado nos metadados deve ser sempre o raster original passado na construção do pipeline (resolve DIV-05 estruturalmente);
+- o raster de entrada original nunca deve ser removido pelo pipeline, mesmo com `remover_temp=True` e mesmo que nenhuma transformação seja chamada;
+- se uma exceção ocorrer dentro do bloco `with`, a etapa final (COG, validação, metadados) não deve ser executada, e a exceção original deve ser propagada (nunca silenciada).
+**Teste relacionado:** TEST-009 (não implementado — os 5 cenários de fumaça descritos no `Status` abaixo devem virar testes automatizados formais)
+**Status:** **implementado e validado manualmente em 2026-08-31** com dados sintéticos, cobrindo 5 cenários: (1) nenhuma transformação, (2) apenas `scale()`, (3) `clip()` + `reclassify()` com classe `0` legítima coincidindo com `nodata_saida=0` (caso real de DIV-07), (4) exceção dentro do bloco `with`, (5) `remover_temp=False`. Todos os critérios de aceitação acima foram confirmados nesses testes. Ver `pipeline.py` e DEC-011 para as decisões de design que preencheram o que este requisito deixava `[EM ABERTO]`.
+*Evidência: `pipeline.py::RasterPipeline`. Grau de confiança: alto (testado de ponta a ponta); pendente apenas formalizar TEST-009 como teste automatizado.*
 
 ---
 

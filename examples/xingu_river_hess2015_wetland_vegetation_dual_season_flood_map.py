@@ -1,107 +1,43 @@
-# examples/fathomdem.py
+# examples/xingu_river_hess2015_wetland_vegetation_dual_season_flood_map.py
 #
-# Exemplo de uso do raspy para processar o FathomDEM da bacia amazônica.
+# HESS 2015 — mapa de vegetação/inundação dual-season, resolução de
+# 3 arc-seconds, recortado para a área de estudo do rio Xingu, mantendo
+# os códigos de classe originais (sem reclassificação).
 #
-# O dado original está em centímetros (inteiro) e precisa ser:
-# 1. recortado para a área de interesse (GeoPackage)
-# 2. convertido para metros (float32, dividir por 100)
-# 3. exportado como COG válido com compressão DEFLATE
-# 4. documentado com metadados YAML
+# NOTA DE MIGRAÇÃO: o bloco de conversão cm->m (aplicar_fator_escala)
+# estava comentado no arquivo original e nunca fez sentido para este
+# dataset (é um mapa de classes categórico, não uma variável contínua
+# como elevação) — removido nesta migração, não apenas comentado,
+# porque era código morto sem propósito aqui, não uma transformação
+# pendente de ativação (diferente do caso do dicionário RECLASSIFICACAO
+# no exemplo "_3arcsec.py", que é uma reclassificação plausível apenas
+# desativada).
 #
-# Como rodar:
-#   conda activate raspy
-#   python examples/fathomdem.py
+# Como rodar (com o ambiente já configurado — ver README.md):
+#   conda activate raspy_env
+#   python examples/xingu_river_hess2015_wetland_vegetation_dual_season_flood_map.py
 
-import sys
-from datetime import datetime
-from pathlib import Path
-
-# Permite importar raspy mesmo sem instalar como pacote
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from raspy import ingest, clip, transform, cog, metadata
+from raspy import RasterPipeline
 
 # ---------------------------------------------------------------------------
 # Caminhos — ajuste para o seu ambiente
 # ---------------------------------------------------------------------------
 
-
-ENTRADA      = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec.tif"
+ENTRADA = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\amazon_basin\hess2015\raw\LC07_Amazon_Wetlands_1284\data\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec.tif"
 MASCARA_GPKG = r"input/xingu_river/xingu_river_study_area_bounding_box.gpkg"
-SAIDA_CLIP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_clip.tif"
-SAIDA_TEMP   = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_temp.tif"
-SAIDA_FINAL  = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog.tif"
-
-
-# ---------------------------------------------------------------------------
-# Garantir que os diretórios de saída existam
-# ---------------------------------------------------------------------------
-for caminho in [SAIDA_CLIP, SAIDA_TEMP, SAIDA_FINAL]:
-    Path(caminho).parent.mkdir(parents=True, exist_ok=True)
+SAIDA_FINAL = r"C:\Users\renan\OneDrive\Projetos\pulsamazonia\data\abiotico\xingu_river\hess2015\processed\wetland_vegetation_dual-season_flood_map\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog\LBA_Amazon_wetland_dual-season_veg_flood_3arcsec_cog.tif"
 
 # ---------------------------------------------------------------------------
 # Pipeline
 # ---------------------------------------------------------------------------
 
-inicio = datetime.now()
-print(f"[{inicio}] Iniciando processamento FathomDEM\n")
+with RasterPipeline(
+    ENTRADA,
+    SAIDA_FINAL,
+    origem="HESS 2015 — Amazon wetland dual-season vegetation/flood map (3 arc-seconds), recorte: bacia do rio Xingu",  # TODO: confirmar citação completa do dataset
+    remover_temp=False,  # decisão deliberada (DEC-007): mantém intermediários para depuração manual
+) as p:
+    p.clip(MASCARA_GPKG, crop=True, all_touched=False)
 
-# Passo 1: Ingestão — valida e lê metadados do raster de entrada
-print("→ Passo 1: Ingestão")
-info = ingest.abrir_raster(ENTRADA)
-print(f"  CRS: {info['crs']}")
-print(f"  Resolução: {info['resolucao']}")
-print(f"  Bandas: {info['bandas']}")
-print(f"  Nodata original: {info['nodata']}")
-
-# Passo 2: Recorte — limita o raster à geometria do GeoPackage
-print("\n→ Passo 2: Recorte territorial")
-clip.recortar_por_gpkg(
-    caminho_raster=ENTRADA,
-    caminho_gpkg=MASCARA_GPKG,
-    caminho_saida=SAIDA_CLIP,
-    # layer="nome_da_camada",  # descomente se o gpkg tiver múltiplas camadas
-    crop=True,                 # ajusta o extent ao recorte
-    all_touched=False,         # só pixels com centro dentro da geometria
-)
-
-'''
-# Passo 3: Transformação — converte cm → m em blocos (opera sobre o recorte)
-print("\n→ Passo 3: Transformação (÷ 100)")
-transform.aplicar_fator_escala(
-    caminho_entrada=SAIDA_CLIP,
-    caminho_saida=SAIDA_TEMP,
-    fator=100.0,
-    nodata_saida=-9999.0,
-)
-'''
-# Passo 3: Conversão para COG
-print("\n→ Passo 4: Conversão para COG")
-cog.converter_para_cog(
-    caminho_entrada=SAIDA_CLIP, #mudar quando for rodar transformação
-    caminho_saida=SAIDA_FINAL,
-    compressao="deflate",
-    resampling_overview="nearest",
-    remover_temp=False,  # decisão deliberada: mantemos o intermediário para depuração
-                         # manual enquanto os exemplos não usam o pipeline builder
-)
-
-# Passo 4: Validação do COG gerado
-print("\n→ Passo 5: Validação COG")
-valido = cog.validar_cog(SAIDA_FINAL)
-
-# Passo 5: Geração de metadados YAML
-print("\n→ Passo 6: Metadados")
-metadata.gerar_metadados(
-    caminho_entrada=ENTRADA,
-    caminho_saida=SAIDA_FINAL,
-    info_raster=info,
-    fator_escala=1.0,
-    compressao="deflate",
-    resampling_overview="nearest",  # corrigido: deve refletir o valor usado em cog.converter_para_cog() acima
-    origem="FathomDEM v1.0 — https://www.fathom.global",
-    calcular_checksum=True,
-)
-
-fim = datetime.now()
-print(f"\n[{fim}] Concluído em {fim - inicio}")
+print(f"COG válido: {p.cog_valido}")
+print(f"Metadados: {p.metadata_path}")

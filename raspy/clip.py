@@ -95,4 +95,5 @@ def recortar_por_gpkg(
             dst.write(raster_recortado)
 
     print(f"  Recorte concluído → {caminho_saida}")
-    print(f"  Dimensões: {raster_recortado.shape[1]} x {raster_recortado.shape[2]} pixels")
+    print(f"  Dimensões: {raster_recortado.shape[1]} x {raster_recortado.shape[2]} pixels") 
+ 

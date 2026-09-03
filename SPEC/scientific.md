@@ -1,6 +1,8 @@
 # Especificação Científica — raspy (Raster Preparation System)
 
 > Reconstrução provisória a partir de código, documentação e exemplos. Não assume que o comportamento atual esteja correto. Itens não decididos estão marcados `[EM ABERTO]`.
+>
+> **Nota de atualização (2026-08-30):** algumas divergências identificadas na primeira versão deste documento foram corrigidas ou tiveram decisão registrada — ver `SPEC/decisions.md`. Os itens abaixo foram atualizados para refletir isso; itens não mencionados permanecem como na versão original.
 
 ## 1. Objetivo científico
 
@@ -17,7 +19,7 @@
 
 - **EXPLÍCITO** (fluxo documentado originalmente): `Raster bruto → ingest → transform → cog → metadata → COG final + YAML`.
 - **IMPLÍCITO** (fluxo reconstruído do código atual): `ingest → clip (recorte por GeoPackage) → transform (escala e/ou reclassificação) → cog (conversão) → {validar_cog, gerar_metadados}`.
-- **QUESTIONÁVEL**: o modelo conceitual documentado e o modelo conceitual implementado divergem (ausência de `clip` e de `reclassificar()` na documentação original), o que compromete a confiabilidade da documentação como fonte de verdade do fluxo atual.
+- **RESOLVIDO (2026-08-30, DEC-002)**: o `readme.md` foi atualizado para incluir `clip` e `reclassificar()` no diagrama de pipeline e na lista de funcionalidades, eliminando a divergência entre documentação e implementação quanto à existência dessas etapas. Permanece **QUESTIONÁVEL**, no entanto, o fato de a *ordem* de aplicação dessas etapas não ser formalizada pela biblioteca (ver item 6 e REQ-009 em `SPEC/requirements.md`).
 
 ## 4. Dados de entrada
 
@@ -38,7 +40,7 @@
 - **IMPLÍCITO**: rasters podem ser grandes demais para caber inteiramente em memória — daí o processamento por blocos (`block_windows`).
 - **IMPLÍCITO**: as operações numéricas assumem raster de banda única.
 - **IMPLÍCITO**: dados contínuos e dados categóricos exigem métodos de overview diferentes (`average` vs. `nearest`), reconhecendo uma distinção metodológica entre magnitude numérica e classe.
-- **QUESTIONÁVEL**: pressupõe-se que a ordem de aplicação das operações (recorte, escala, reclassificação, COG) não afeta a validade científica do resultado, quando na prática ordens diferentes (`A → B` vs. `B → A`) podem produzir resultados cientificamente distintos, e essa ordem não é imposta pela biblioteca.
+- **QUESTIONÁVEL — em andamento**: pressupõe-se que a ordem de aplicação das operações (recorte, escala, reclassificação, COG) não afeta a validade científica do resultado, quando na prática ordens diferentes (`A → B` vs. `B → A`) podem produzir resultados cientificamente distintos, e essa ordem não é imposta pela biblioteca. O design de uma API de pipeline (`RasterPipeline`, DEC-001) foi aprovado para permitir composição livre das transformações mantendo uma etapa final garantida — mas isso não resolve, por si só, a validade científica da ordem escolhida pelo usuário; apenas garante que a etapa final (COG/validação/metadados) sempre ocorra. A responsabilidade de decidir a ordem cientificamente correta continua sendo do usuário.
 
 ## 7. Método
 
@@ -58,14 +60,15 @@
 
 - **EXPLÍCITO**: `ingest.py` valida existência do arquivo, presença de CRS e de pelo menos uma banda antes do processamento.
 - **EXPLÍCITO**: `cog.validar_cog()` retorna `True`/`False` indicando se o arquivo final é um COG válido.
-- `DESCONHECIDO`: não há, no material disponível, evidência de controle de qualidade sobre os *valores* resultantes das transformações (ex.: checagem de faixa de valores plausível, comparação estatística antes/depois, detecção de outliers introduzidos pela reclassificação ou escala).
+- **EXPLÍCITO (adicionado em 2026-08-30, DEC-007)**: `clip.py` agora emite um aviso explícito quando o raster de entrada não possui `nodata` definido, antes de aplicar o recorte. É o único ponto do pipeline, até o momento, com esse tipo de verificação de qualidade sobre uma condição de risco (em vez de apenas sobre a estrutura do arquivo).
+- `DESCONHECIDO`: fora do caso acima, não há, no material disponível, evidência de controle de qualidade sobre os *valores* resultantes das transformações (ex.: checagem de faixa de valores plausível, comparação estatística antes/depois, detecção de outliers introduzidos pela reclassificação ou escala).
 - `[EM ABERTO]`
 
 ## 10. Tratamento de dados ausentes
 
 - **EXPLÍCITO**: existe um parâmetro `nodata_saida` tanto na escala quanto na reclassificação, usado para definir o valor de "sem dado" na saída.
-- **QUESTIONÁVEL**: ver item 8 — a mesma constante `nodata_saida` é usada tanto para "nodata original propagado" quanto para "valor sem regra de reclassificação", fundindo dois conceitos potencialmente distintos.
-- `DESCONHECIDO`: não há evidência de tratamento explícito de nodata na etapa de recorte (`clip.py`) além do comportamento padrão de mascaramento.
+- **QUESTIONÁVEL — não resolvido**: ver item 8 — a mesma constante `nodata_saida` é usada tanto para "nodata original propagado" quanto para "valor sem regra de reclassificação", fundindo dois conceitos potencialmente distintos. Este ponto **não foi corrigido** (é distinto do item abaixo) e é o alvo do dataset sintético #1 (classe 0 legítima + `nodata_saida=0`), ainda a ser construído.
+- **PARCIALMENTE RESOLVIDO (2026-08-30, DEC-007)**: a etapa de recorte (`clip.py`) agora emite um aviso quando o raster de entrada não possui `nodata` definido. Isso cobre apenas o caso de **ausência total** de nodata na entrada — não resolve a ambiguidade de `nodata_saida` descrita acima, que é um problema diferente (nodata de saída colidindo com uma classe válida, não ausência de nodata de entrada).
 
 ## 11. Incerteza
 
@@ -77,7 +80,7 @@
 - **EXPLÍCITO**: GeoTIFF intermediário (produto de recorte e/ou transformação numérica), não necessariamente em formato COG.
 - **EXPLÍCITO**: COG final, produto de `cog.converter_para_cog()`.
 - **EXPLÍCITO**: arquivo YAML de metadados, contendo informações de entrada/saída, CRS, resolução, número de bandas, bounding box, nodata, parâmetros de processamento e, opcionalmente, checksum MD5.
-- **QUESTIONÁVEL**: o YAML de metadados parece registrar apenas parte da cadeia de processamento (parâmetros de escala e de COG), sem estrutura evidente para geometria/parâmetros de recorte, tabela de reclassificação completa ou ordem das operações — o que limita sua função como registro completo e reexecutável do pipeline.
+- **QUESTIONÁVEL — em andamento**: o YAML de metadados parece registrar apenas parte da cadeia de processamento (parâmetros de escala e de COG), sem estrutura evidente para geometria/parâmetros de recorte, tabela de reclassificação completa ou ordem das operações — o que limita sua função como registro completo e reexecutável do pipeline. Em 2026-08-30, o valor de `resampling_overview` registrado nos exemplos existentes foi corrigido para corresponder ao valor real usado na conversão (DEC-005), mas a inconsistência de `nodata_saida` (item 10) e a ausência de registro de recorte/reclassificação completos permanecem — a correção estrutural foi adiada para a `RasterPipeline` (REQ-009, DEC-003/DEC-004).
 
 ## 13. Limitações científicas
 

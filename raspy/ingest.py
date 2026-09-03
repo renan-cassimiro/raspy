@@ -52,4 +52,5 @@ def abrir_raster(caminho: str) -> dict:
         "resolucao": resolucao,
         "bandas": bandas,
         "bounds": bounds,
-    }
+    } 
+ 

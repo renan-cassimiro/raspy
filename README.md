@@ -27,21 +27,51 @@ Projetos GIS exploratórios tendem a acumular arquivos duplicados, projeções i
 ## Estrutura do projeto
 
 ```
-raspy/
+project/
 │
-├── raspy/
-│   ├── __init__.py     # expõe os módulos
-│   ├── ingest.py       # abertura e validação do raster
-│   ├── clip.py         # recorte espacial por geometria de GeoPackage
-│   ├── transform.py    # transformação de valores em blocos (escala, reclassificação)
-│   ├── cog.py          # conversão e validação COG
-│   └── metadata.py     # geração de metadados YAML
+├── SPEC/                # documentação de fonte de verdade (científica, requisitos, decisões)
+├── CONTEXT.md
 │
-├── examples/
-│   └── ...             # scripts de pipelines reais (ver seção "Como usar")
+├── src/raspy/
+│   ├── __init__.py      # expõe os módulos, incluindo RasterPipeline
+│   ├── ingest.py        # abertura e validação do raster
+│   ├── clip.py          # recorte espacial por geometria de GeoPackage
+│   ├── transform.py     # transformação de valores em blocos (escala, reclassificação)
+│   ├── cog.py           # conversão e validação COG
+│   ├── metadata.py      # geração de metadados YAML
+│   └── pipeline.py      # RasterPipeline — composição de pipeline com finalização automática
 │
-├── logs/
-└── README.md
+├── tests/
+│   ├── unit/            # testes de função
+│   ├── pipeline/        # testes de integração (RasterPipeline)
+│   └── synthetic_data/  # geradores de datasets sintéticos usados pelos testes
+│
+├── examples/            # scripts de pipelines reais (ver seção "Como usar")
+├── data/
+├── docs/
+│
+├── pyproject.toml       # permite `pip install -e .`
+├── README.md
+└── CHANGELOG.md
+```
+
+---
+
+## Instalação
+
+```bash
+conda env create -f environment.yml
+conda activate raspy_env
+pip install -e .
+```
+
+O `pip install -e .` é o que torna `import raspy` disponível em qualquer lugar (inclusive nos testes) — sem ele, `python examples/algum_script.py` e `pytest` só funcionam por acidente de diretório atual, e podem falhar de forma diferente em cada máquina/sistema operacional (isso já aconteceu — ver `CHANGELOG.md`).
+
+Para rodar os testes, instale também o `pytest` (ferramenta de desenvolvimento, não faz parte de `environment.yml`):
+
+```bash
+pip install pytest
+pytest tests/
 ```
 
 ---
@@ -62,79 +92,68 @@ Gerenciadas pelo seu ambiente conda. Pacotes necessários:
 
 ## Como usar
 
-### 1. Usando como módulos Python
+### 1. Usando `RasterPipeline` (recomendado)
+
+`RasterPipeline` compõe `clip()`, `scale()` e `reclassify()` em qualquer ordem, qualquer quantidade de vezes, e finaliza automaticamente o pipeline (conversão para COG, validação e metadados) ao sair do bloco `with` — sem que você precise chamar `cog.converter_para_cog()`, `cog.validar_cog()` nem `metadata.gerar_metadados()` manualmente, e sem risco de os parâmetros registrados nos metadados divergirem do que de fato foi executado (ver `CHANGELOG.md`, DIV-04/DIV-05/DIV-12).
 
 **Exemplo A — dado contínuo (ex.: elevação em cm → m), sem recorte:**
 
 ```python
-from raspy import ingest, transform, cog, metadata
+from raspy import RasterPipeline
 
-# Valida e lê metadados
-info = ingest.abrir_raster("entrada.tif")
+with RasterPipeline("entrada.tif", "saida_cog.tif") as p:
+    p.scale(fator=100.0)
+    # resampling_overview é inferido automaticamente como "average"
+    # depois de scale() — não precisa ser informado aqui.
 
-# Converte valores em blocos (ex: cm → m)
-transform.aplicar_fator_escala("entrada.tif", "temp.tif", fator=100.0)
-
-# Converte para COG (overview 'average' é recomendado para dados contínuos)
-cog.converter_para_cog("temp.tif", "saida_cog.tif", resampling_overview="average")
-
-# Valida o COG
-cog.validar_cog("saida_cog.tif")
-
-# Gera metadados YAML — os parâmetros aqui devem sempre refletir
-# os mesmos valores realmente usados nas chamadas acima.
-metadata.gerar_metadados(
-    "entrada.tif", "saida_cog.tif",
-    info_raster=info,
-    fator_escala=100.0,
-    resampling_overview="average",
-)
+print("COG válido:", p.cog_valido)
+print("Metadados em:", p.metadata_path)
 ```
 
 **Exemplo B — dado categórico (ex.: mapa de classes), com recorte e reclassificação:**
 
 ```python
+from raspy import RasterPipeline
+
+with RasterPipeline("entrada.tif", "saida_cog.tif") as p:
+    p.clip("area.gpkg", crop=True)
+    p.reclassify(mapeamento={1: 0, 2: 1, 3: 1}, nodata_saida=0, dtype="uint8")
+    # resampling_overview é inferido automaticamente como "nearest"
+    # depois de reclassify().
+
+print("COG válido:", p.cog_valido)
+print("Metadados em:", p.metadata_path)
+```
+
+> Se nenhuma etapa for chamada dentro do `with`, o raster de entrada é convertido para COG diretamente, sem transformação. Se uma exceção ocorrer dentro do `with`, nada é finalizado (nenhum COG nem metadado é gerado a partir de um pipeline incompleto) e a exceção é sempre propagada.
+
+### 2. Usando os módulos individualmente (modo manual/avançado)
+
+Ainda é possível chamar `ingest`, `clip`, `transform`, `cog` e `metadata` diretamente, sem `RasterPipeline` — por exemplo, para inspecionar um resultado intermediário antes de decidir o próximo passo. Nesse modo, **você é responsável por manter os parâmetros passados a `metadata.gerar_metadados()` (fator de escala, `nodata_saida`, `resampling_overview`) idênticos ao que de fato foi executado nas etapas anteriores** — é exatamente esse trabalho manual que `RasterPipeline` elimina.
+
+```python
 from raspy import ingest, clip, transform, cog, metadata
 
-# Valida e lê metadados
 info = ingest.abrir_raster("entrada.tif")
-
-# Recorta pela geometria de um GeoPackage
 clip.recortar_por_gpkg("entrada.tif", "area.gpkg", "clip.tif", crop=True)
-
-# Reclassifica valores categóricos
-transform.reclassificar(
-    "clip.tif", "temp.tif",
-    mapeamento={1: 0, 2: 1, 3: 1},
-    nodata_saida=0,
-    dtype="uint8",
-)
-
-# Converte para COG ('nearest' é recomendado para dados categóricos)
+transform.reclassificar("clip.tif", "temp.tif", mapeamento={1: 0, 2: 1, 3: 1}, nodata_saida=0, dtype="uint8")
 cog.converter_para_cog("temp.tif", "saida_cog.tif", resampling_overview="nearest")
-
-# Valida o COG
 cog.validar_cog("saida_cog.tif")
-
-# Gera metadados YAML — repare que resampling_overview é "nearest"
-# aqui também, coerente com a chamada de conversão acima.
 metadata.gerar_metadados(
     "clip.tif", "saida_cog.tif",
     info_raster=info,
-    resampling_overview="nearest",
+    resampling_overview="nearest",  # precisa bater com o valor usado acima — ninguém garante isso por você aqui
 )
 ```
 
-> **Atenção:** `metadata.gerar_metadados()` não deduz automaticamente os parâmetros usados nas etapas anteriores — cada valor (fator de escala, método de overview, etc.) precisa ser repassado manualmente e deve corresponder exatamente ao que foi executado. Divergências aqui já ocorreram em versões anteriores dos scripts de exemplo. A automação desse ponto (para que os metadados sejam derivados diretamente da execução real, e não redigitados) está planejada para uma futura API de pipeline (ver Roadmap).
-
-### 2. Rodando um exemplo completo
+### 3. Rodando um exemplo completo
 
 ```bash
-conda activate seu_ambiente
+conda activate raspy_env
 python examples/<nome_do_script>.py
 ```
 
-Os scripts em `examples/` são pipelines reais de datasets específicos do projeto, não um template único — cada um combina `ingest`, `clip`, `transform` (escala ou reclassificação) e `cog`/`metadata` de acordo com a necessidade daquele dado.
+Os scripts em `examples/` são pipelines reais de datasets científicos do projeto (HESS 2015, Souza 2025), cada um usando `RasterPipeline` com a combinação de `clip`/`reclassify` que faz sentido para aquele dataset específico — não é um template único copiado 5 vezes (ver `CHANGELOG.md` para o que isso corrigiu).
 
 ---
 
@@ -204,10 +223,11 @@ COG final + .yaml
 
 **v0.2** — recorte territorial via GeoPackage; reclassificação categórica de valores *(concluído)*
 
-**v0.3** — API de pipeline (`RasterPipeline`) para compor etapas de forma programática, com padronização automática do passo final (conversão para COG, validação e geração de metadados), reduzindo o risco de metadados divergentes do processamento real *(em planejamento)*
+**v0.3** — API de pipeline (`RasterPipeline`) para compor etapas de forma programática, com padronização automática do passo final (conversão para COG, validação e geração de metadados) *(concluído)*; migração dos 5 scripts de `examples/` para `RasterPipeline` *(concluído)*
 
 **v0.4** — reprojeção e alinhamento espacial
 
 **v0.5** — CLI com Typer
 
 **v0.6** — integração com object storage S3-compatible
+ 
